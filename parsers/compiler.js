@@ -21,8 +21,13 @@ class Parser {
 				var parseResult = this.grammar[j](tokens, i, this);
 				
 				if (parseResult) {
-					ast.push(parseResult);
-					i += parseResult.tokensParsed - 1 - parseResult.offset;
+					if (Array.isArray(parseResult)) {
+						ast = ast.concat(parseResult);
+						i += parseResult[parseResult.length - 1].tokensParsed - 1 - parseResult[parseResult.length - 1].offset;
+					} else {
+						ast.push(parseResult);
+						i += parseResult.tokensParsed - 1 - parseResult.offset;
+					}
 					
 					break;
 				}

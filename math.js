@@ -5,7 +5,7 @@ var mJS = require('mathjs');
 var alG = require('algebrite');
 var regression = require('regression');
 var nerdamer = require('nerdamer/all');
-var {ComputationError, TokenizationError, functions:f, parse, evaluate, evaluateInfo, angleMode, ofCircle} = require('./parsers/calculate.js');
+var {ComputationError, TokenizationError, functions:f, parse, evaluate, evaluateInfo, angleMode, ofCircle, normalToSuper, superToNormal, superScripts:ss} = require('./parsers/calculate.js');
 
 var generateStepString = function(steps, tabLevel = 1) {
 	var str = '--- In ' + steps.current + ' ---\n';
@@ -897,16 +897,17 @@ class DA {
 			if (!DA.exceptions.includes(unit)) {
 				for (var i = 2; i <= 4; ++i) {
 					if (!DA.exceptions.includes(unit + '^' + i)) {
-						DA.conversions[unit + '^' + i] = [...DA.conversions[unit]]; // no references
+						DA.conversions[unit + '^' + i] = DA.conversions[unit].slice();
 						
-						DA.conversions[unit + '^' + i].forEach(function(raisedUnit, index, array) {
+						for (var j = 0; j < DA.conversions[unit].length; ++j) {
+							var raisedUnit = DA.conversions[unit][j];
 							var ratio = DA.stringToRatio(raisedUnit);
 							
 							ratio[0] = f.pow(ratio[0], i);
 							ratio[1] = ratio[1] + '^' + i;
 							
-							array[index] = DA.ratioToString(ratio);
-						});
+							DA.conversions[unit + '^' + i][j] = DA.ratioToString(ratio);
+						}
 					}
 				}
 			}
@@ -915,6 +916,9 @@ class DA {
 	
 	// convert a single unit to another
 	static convertSingle(quantity, start, end, customRatios) {
+		start = start.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (match) => '^' + ss[match]);
+		end = end.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (match) => '^' + ss[match]);
+		
 		var parsedCustom = [];
 		for (var i = 0; i < customRatios.length; ++i) {
 			parsedCustom[i] = DA.parseCustomRatio(customRatios[i]);
@@ -2082,6 +2086,8 @@ module.exports = {
 	parse: parse,
 	
 	clamp: f.clamp,
+	normalToSuper: normalToSuper,
+	superToNormal: superToNormal,
 	numSuffix: numSuffix,
 	
 	// .calculate

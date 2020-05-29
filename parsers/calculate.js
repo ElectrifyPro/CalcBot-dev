@@ -1,4 +1,11 @@
-﻿var mJS = require('mathjs');
+﻿var {create, all} = require('mathjs');
+var mJS = create(all);
+
+mJS.config({
+	number: 'BigNumber',
+	precision: 64,
+});
+
 var {Parser, Tokenizer} = require('./compiler.js');
 
 /**
@@ -426,6 +433,89 @@ var parseOperator = function(tokens, current, parser) {
 	return undefined;
 };
 
+var reverseSuperscripts = {
+	0: '⁰',
+	1: '¹',
+	2: '²',
+	3: '³',
+	4: '⁴',
+	5: '⁵',
+	6: '⁶',
+	7: '⁷',
+	8: '⁸',
+	9: '⁹',
+	'+': '⁺',
+	'-': '⁻',
+};
+
+var superScripts = {
+	'⁰': 0,
+	'¹': 1,
+	'²': 2,
+	'³': 3,
+	'⁴': 4,
+	'⁵': 5,
+	'⁶': 6,
+	'⁷': 7,
+	'⁸': 8,
+	'⁹': 9,
+	'⁺': '+',
+	'⁻': '-',
+};
+
+var normalToSuper = function(str) {
+	return str.replace(/[\d\+\-]/g, (match) => reverseSuperscripts[match]);
+};
+
+var superToNormal = function(str) {
+	return str.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻]/g, (match) => superScripts[match]);
+};
+
+var parseSuper = function(tokens, current, parser) {
+	var tokensParsed = [];
+	
+	if (tokens[current].type.startsWith('super_')) {
+		// collect adjacent superscript tokens
+		for (var i = current; i < tokens.length; ++i) {
+			if (tokens[i].type.startsWith('super_')) {
+				tokensParsed.push(tokens[i]);
+			} else {
+				break;
+			}
+		}
+		
+		// convert to normal token
+		for (var i = 0; i < tokensParsed.length; ++i) {
+			tokensParsed[i].value = superToNormal(tokensParsed[i].value);
+			
+			if (tokensParsed[i].value === '+') {
+				tokensParsed[i].type = 'add';
+			} else if (tokensParsed[i].value === '-') {
+				tokensParsed[i].type = 'subtract';
+			} else {
+				tokensParsed[i].type = 'number';
+			}
+		}
+		
+		// parse them as a raised exponent
+		return [
+			{
+				type: 'Operator',
+				value: '^',
+			},
+			{
+				body: parser.parse(tokensParsed),
+				offset: 0,
+				tokensParsed: tokensParsed.length,
+				type: 'NestedGroup',
+				value: tokensParsed.reduce((accumulator, currentValue) => accumulator + currentValue.value, ''),
+			},
+		];
+	}
+	
+	return undefined;
+};
+
 var parseSymbol = function(tokens, current, parser) {
 	if (tokens[current].type === 'symbol') {
 		if (tokens[current].value === '×' || tokens[current].value === '·') {
@@ -510,7 +600,7 @@ var implicitRules = {
 	name: ['number', 'open_paren'],
 };
 
-var t = new Tokenizer([{regex: /\s+/, type: 'whitespace'}, {regex: /[a-z]+/i, type: 'name'}, {regex: /\+/, type: 'add'}, {regex: /-/, type: 'subtract'}, {regex: /\*/, type: 'multiply'}, {regex: /\//, type: 'divide'}, {regex: /%/, type: 'modulo'}, {regex: /\^/, type: 'exponent'}, {regex: /!/, type: 'factorial'}, {regex: /,/, type: 'comma'}, {regex: /\(/, type: 'open_paren'}, {regex: /\)/, type: 'close_paren'}, {regex: /\d+/, type: 'number'}, {regex: /\./, type: 'dot'}, {regex: /./, type: 'symbol'}], function(tokens) {
+var t = new Tokenizer([{regex: /\s+/, type: 'whitespace'}, {regex: /[a-z]+/i, type: 'name'}, {regex: /⁺/, type: 'super_add'}, {regex: /\+/, type: 'add'}, {regex: /⁻/, type: 'super_subtract'}, {regex: /-/, type: 'subtract'}, {regex: /\*/, type: 'multiply'}, {regex: /\//, type: 'divide'}, {regex: /%/, type: 'modulo'}, {regex: /\^/, type: 'exponent'}, {regex: /!/, type: 'factorial'}, {regex: /,/, type: 'comma'}, {regex: /\(/, type: 'open_paren'}, {regex: /\)/, type: 'close_paren'}, {regex: /[⁰¹²³⁴⁵⁶⁷⁸⁹]+/, type: 'super_number'}, {regex: /\d+/, type: 'number'}, {regex: /\./, type: 'dot'}, {regex: /./, type: 'symbol'}], function(tokens) {
 	// closing parenthesis
 	var open = 0;
 	var close = 0;
@@ -545,7 +635,7 @@ var t = new Tokenizer([{regex: /\s+/, type: 'whitespace'}, {regex: /[a-z]+/i, ty
 	return tokens;
 });
 
-var p = new Parser(t, [parseNumber, parseName, parseNested, parseFunctionCall, parseOperator, parseSymbol]);
+var p = new Parser(t, [parseNumber, parseName, parseNested, parseFunctionCall, parseOperator, parseSuper, parseSymbol]);
 
 // evaluation helper functions
 var correctValues = function(ast, calcVars) {
@@ -591,6 +681,10 @@ var baseEvaluate = function(ast, calcVars, trigMode, current) {
 			} else {
 				var evaluation = baseEvaluate(ast[i].body, calcVars, trigMode, 'group');
 				steps.push(evaluation.steps);
+				
+				if (evaluation.ast.length > 1) {
+					throw new SyntaxError('There were too many nodes in the resulting tree.');
+				}
 				
 				ast[i] = evaluation.ast[0];
 			}
@@ -1141,4 +1235,10 @@ module.exports = {
 			return value * 2 * Math.PI;
 		}
 	},
+	
+	normalToSuper: normalToSuper,
+	superToNormal: superToNormal,
+	
+	reverseSuperscripts: reverseSuperscripts,
+	superScripts: superScripts,
 };
