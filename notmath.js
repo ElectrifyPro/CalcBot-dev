@@ -156,21 +156,7 @@ var inputInDict = function(inCounts, dictCounts) {
 
 module.exports = {
 	// converts every L / R in an input to W
-	aegyo: function(input) {
-		var result = input.split('');
-		
-		for (var i = 0; i < result.length; ++i) {
-			var current = result[i];
-			
-			if (current === 'l' || current === 'r') {
-				result[i] = 'w';
-			} else if (current === 'L' || current === 'R') {
-				result[i] = 'W';
-			}
-		}
-		
-		return result.join('');
-	},
+	aegyo: (input) => input.replace(/[LR]/g, 'W').replace(/[lr]/g, 'w'),
 	
 	// find the words closest to the input (spell check)
 	closest: function(input) {

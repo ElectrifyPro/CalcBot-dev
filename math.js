@@ -800,7 +800,7 @@ class DA {
 		'lb': ['1/2000 ton', '16 oz', '0.453592 kg', '454 g'],
 		'oz': ['1/16 lb', '28.3495231 g'],
 		
-		't': ['1000 kg'], // metric tonne
+		't': ['1000 kg'], // metric ton (tonne)
 		'kg': ['1/1000 t', '1000 g', '2.20462 lb'],
 		'g': ['1/1000 kg', '100 cg', '0.00220462 lb', '0.0352739619 oz'],
 		'cg': ['1/100 g', '10 mg'],
@@ -1555,10 +1555,8 @@ class Radical {
 	
 	// approximates a radical from a given number
 	static approximate(num, index) {
-		var coeff = 1;
 		var radicand = f.round(f.pow(num, index));
-		
-		return new Radical(coeff, index, radicand).simplify();
+		return new Radical(1, index, radicand).simplify();
 	}
 	
 	toString() {

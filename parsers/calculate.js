@@ -86,21 +86,11 @@ var ln = function(e) {
 };
 
 var sqrt = function(n) {
-	var result = mJS.sqrt(n);
-	
-	if (typeof result === 'object') {
-		return {
-			type: 'ComplexLiteral',
-			real: mJS.fraction(result.re).valueOf(),
-			imaginary: mJS.fraction(result.im).valueOf(),
-		};
-	} else {
-		return result;
-	}
+	return pow(n, 1 / 2);
 };
 
 var cbrt = function(n) {
-	return mJS.cbrt(n);
+	return pow(n, 1 / 3);
 };
 
 // take ith root of n
@@ -698,7 +688,19 @@ var baseEvaluate = function(ast, calcVars, trigMode, current) {
 			
 			if (functions[ast[i].name].c.includes(ast[i].parameters.length)) {
 				for (var j = 0; j < ast[i].parameters.length; ++j) {
-					paramEvaluation[j] = baseEvaluate(ast[i].parameters[j], calcVars, trigMode, 'function ' + ast[i].name).ast[0].value;
+					var result = baseEvaluate(ast[i].parameters[j], calcVars, trigMode, 'function ' + ast[i].name);
+					
+					if (result.ast[0].type === 'NumberLiteral') {
+						if (!isFinite(result.ast[0].value)) {
+							throw new ComputationError('The answer does not exist, or was too large to display.');
+						}
+						
+						result.value = result.ast[0].value;
+					} else if (result.ast[0].type === 'ComplexLiteral') {
+						result.value = result.ast[0];
+					}
+					
+					paramEvaluation[j] = result.value;
 				}
 				
 				var ans = functions[ast[i].name].f(...paramEvaluation);
