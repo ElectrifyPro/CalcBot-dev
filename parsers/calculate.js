@@ -1,12 +1,33 @@
-﻿var {create, all} = require('mathjs');
+﻿/*var {create, all} = require('mathjs');
 var mJS = create(all);
 
 mJS.config({
 	number: 'BigNumber',
 	precision: 64,
-});
+});*/
+var mJS = require('mathjs');
 
 var {Parser, Tokenizer} = require('./compiler.js');
+
+// creates a deep copy of an object
+var deepCopy = function(obj) {
+	var value;
+	
+	if (obj === null || typeof obj !== 'object') {
+		return obj;
+	}
+	
+	var out = Array.isArray(obj) ? [] : {};
+	
+	for (var key in obj) {
+		var value = obj[key];
+		
+		// recursive deep copy for nested objects / arrays
+		out[key] = deepCopy(value);
+	}
+	
+	return out;
+};
 
 /**
 MATH FUNCTIONS
@@ -1123,9 +1144,9 @@ var e = function(exp, calcVars, trigMode) {
 	
 	if (typeof exp === 'string') {
 		parsedAs = p.parse(exp, ['whitespace']);
-		ast = parsedAs.slice();
+		ast = deepCopy(parsedAs);
 	} else {
-		ast = ast.slice();
+		ast = deepCopy(exp);
 	}
 	
 	// replace variable names with their values

@@ -236,6 +236,18 @@ var convertToUsable = function(str) {
 	return result;
 };
 
+// produces linear equation from two points
+var linearPoints = function(x1, y1, x2, y2) {
+	var slope = ((y2 - y1) / (x2 - x1)).toFixed(10);
+	var yInt = (y1 - slope * x1).toFixed(10);
+	
+	return {
+		equation: [Number(slope), Number(yInt)],
+		string: 'y=' + Number(slope) + 'x+' + Number(yInt),
+		r2: 1,
+	};
+};
+
 var isInt = (num) => f.round(num) === Number(num);
 
 // 2D vector declaration
@@ -2128,6 +2140,13 @@ module.exports = {
 		
 		// numeric integration of expression (variable, expression, bound 1, bound 2)
 		numIntegrate: function(variable, exp, b1, b2) {
+			b1 = mJS.fraction(b1).valueOf();
+			b2 = mJS.fraction(b2).valueOf();
+			
+			if (b1 === b2) {
+				throw new RangeError('The `x` coordinates inputted cannot be the same.');
+			}
+			
 			var result = 0;
 			
 			var scope = {};
@@ -2155,17 +2174,29 @@ module.exports = {
 			return evaluateInfo(exp, calcVars, mode).result;
 		},
 		
-		// runs "eval" in this scope
-		unsafeEval: function(exp) {
-			return new Function('', 'return ' + exp).apply();
-		},
-		
 		expand: function(exp) {
 			exp = parse(exp).toString();
 			
 			var result = convertToUsable(nerdamer('expand(' + convertToMJSUsable(exp) + ')').toString()).replace(/\*/g, '\\*');
 			
 			return result;
+		},
+		
+		secantLine: function(exp, b1, b2) {
+			exp = exp.toLowerCase();
+			
+			b1 = mJS.fraction(b1).valueOf();
+			b2 = mJS.fraction(b2).valueOf();
+			
+			if (b1 === b2) {
+				throw new RangeError('The `x` coordinates inputted cannot be the same.');
+			}
+			
+			var parsed = parse(exp);
+			var y1 = evaluate(parsed, {x: b1});
+			var y2 = evaluate(parsed, {x: b2});
+			
+			return linearPoints(b1, y1, b2, y2);
 		},
 		
 		solveFor: function(variable, exp) {
@@ -2242,7 +2273,18 @@ module.exports = {
 		var result = undefined;
 		
 		if (type === 'linear') {
-			result = regression.linear(points, {precision: 10});
+			// if there are only two points, use the linearPoints function
+			if (points.length === 2) {
+				result = linearPoints(points[0][0], points[0][1], points[1][0], points[1][1]);
+			} else if (points.every((coord, index) => coord[index][1] === coord[0][1])) { // if all the y coordinates are the same, the result is y=(y coord)
+				result = {
+					equation: [0, points[0][1]],
+					string: 'y=0x+' + points[0][1].toFixed(10),
+					r: 0,
+				};
+			} else {
+				result = regression.linear(points, {precision: 10});
+			}
 		} else if (type === 'exponential') {
 			result = regression.exponential(points, {precision: 10});
 		} else if (type === 'polynomial') {
