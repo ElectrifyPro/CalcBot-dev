@@ -92,7 +92,7 @@ var rtd = function(r) {
 	return r * 180 / Math.PI;
 };
 
-// logarithm base x of y
+// logarithm base y of x
 var log = function(x, y = 10) {
 	if (y <= 0) {
 		return NaN;
@@ -122,7 +122,12 @@ var root = function(i, n) {
 
 // returns a * 10 ^ b
 var scientific = function(a, b) {
-	return a * mJS.pow(10, b);
+	return a * pow(10, b);
+};
+
+// returns e ^ x
+var exp = function(x) {
+	return pow(2.718281828459045, x);
 };
 
 var pow = function(n, p) {
@@ -175,10 +180,11 @@ var pow = function(n, p) {
 				imaginary: mJS.fraction(pow(r, p) * sin(p * atan(n.imaginary / n.real))).valueOf(),
 			};
 		} else if (typeof p === 'object') {
+			var angle = m === 'degree' ? rtd(p.imaginary * ln(n)) : p.imaginary * ln(n);
 			return {
 				type: 'ComplexLiteral',
-				real: pow(n, p.real) * cos(p.imaginary * ln(n)),
-				imaginary: pow(n, p.real) * sin(p.imaginary * ln(n)),
+				real: pow(n, p.real) * cos(angle),
+				imaginary: pow(n, p.real) * sin(angle),
 			};
 		}
 	}
@@ -595,6 +601,7 @@ var functions = {
 	cbrt: {f: cbrt, c: [1]},
 	root: {f: root, c: [2]},
 	scientific: {f: scientific, c: [2]},
+	exp: {f: exp, c: [1]},
 	pow: {f: pow, c: [2]},
 	factorial: {f: factorial, c: [1]},
 	abs: {f: abs, c: [1]},
@@ -1218,6 +1225,7 @@ module.exports = {
 		cbrt: cbrt,
 		root: root,
 		scientific: scientific,
+		exp: exp,
 		pow: pow,
 		factorial: factorial,
 		abs: abs,
