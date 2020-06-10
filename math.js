@@ -6,6 +6,7 @@ var alG = require('algebrite');
 var regression = require('regression');
 var nerdamer = require('nerdamer/all');
 var {ComputationError, TokenizationError, functions:f, parse, evaluate, evaluateInfo, angleMode, ofCircle, normalToSuper, superToNormal, superScripts:ss} = require('./parsers/calculate.js');
+var {parse:inequality, betweenInequality:between, inequalityOverlap:overlap} = require('./parsers/inequality.js');
 
 var generateStepString = function(steps, tabLevel = 1) {
 	var str = '--- In ' + steps.current + ' ---\n';
@@ -77,6 +78,35 @@ var randomRgb = function() {
 	var b = num & 255;
 	
 	return [r, g, b];
+};
+
+// returns true if the majority of the numbers in the array approach zero
+var zeroDiff = function(arr) {
+	var count = 0;
+	
+	for (var i = 1; i < arr.length; ++i) {
+		if (f.abs(arr[i]) < f.abs(arr[i - 1])) {
+			++count;
+		}
+	}
+	
+	return count >= f.round(arr.length / 2);
+};
+
+// returns true if every number in an array is less than a certain threshold
+var lessThreshold = function(arr, threshold) {
+	return arr.every((num) => num < threshold);
+};
+
+// returns true if the numbers in the array keep getting larger and larger
+var largerDiff = function(arr) {
+	for (var i = 1; i < arr.length; ++i) {
+		if (arr[i] < arr[i - 1]) {
+			return false;
+		}
+	}
+	
+	return true;
 };
 
 // replace a section of a string with a new one
@@ -1983,12 +2013,33 @@ class Graph {
 				}
 			} else if (/^(y|f\(x\))=/.test(exp.exp)) { // function of x
 				var parsed = parse(str.substring(str.indexOf('=') + 1));
+				
+				if (this.options.pointsAtRoots) {
+					// y-intercept
+					var yInt = evaluate(parsed, {x: 0});
+					if (isFinite(yInt)) {
+						this.addPoint([0, yInt], '(0, ' + yInt + ')', 'rgb(' + randomRgb().join(',') + ')');
+					}
+					
+					// x-intercept
+					var results = nerdamer('solve(' + convertToMJSUsable(parsed.toString()) + ', x)').toString().replace(/[\[\]]/g, '').split(',');
+					
+					for (var i = 0; i < results.length; ++i) {
+						var xInt = evaluate(results[i]);
+						
+						if (typeof xInt === 'number') {
+							var num = parseFloat(xInt.toFixed(3));
+							this.addPoint([num, 0], '(' + num + ', 0)', 'rgb(' + randomRgb().join(',') + ')');
+						}
+					}
+				}
+				
 				for (var i = 0; i <= this.width; i += this.scale / 8) {
 					var x = this.canvasToX(i);
 					var y = evaluate(parsed, {x: x}, trigMode);
 					var point = [i, this.yToCanvas(y)];
 					
-					if (this.options.pointsAtRoots) {
+					/*if (this.options.pointsAtRoots) {
 						if (i === 0) {
 							trackRoot = y;
 						}
@@ -1998,7 +2049,7 @@ class Graph {
 						}
 						
 						trackRoot = y;
-					}
+					}*/
 					
 					if (!drawing) {
 						if (point[1] >= -1000 && point[1] <= this.height + 1000) {
@@ -2076,7 +2127,7 @@ class Graph {
 }
 
 module.exports = {
-	constants: ['tau', 'τ', 'pi', 'π', 'e', 'phi', 'φ', 'i'],
+	constants: ['∞', 'infinity', 'tau', 'τ', 'pi', 'π', 'e', 'phi', 'φ', 'i'],
 	predefined: ['parse', 'numSuffix', 'hexToRgb', 'randomRgb', 'findExpressionLimitsHere', 'convertCeval', 'convertToMJSUsable', 'convertToUsable', 'isInt', 'sin', 'cos', 'tan', 'csc', 'sec', 'cot', 'asin', 'acos', 'atan', 'asec', 'acsc', 'acot', 'dtr', 'rtd', 'log', 'ln', 'sqrt', 'cbrt', 'root', 'pow', 'factorial', 'abs', 'ceil', 'floor', 'round', 'clamp', 'prime', 'polarity', 'factors', 'factorization', 'gcf', 'lcm'],
 	
 	// errors
@@ -2112,6 +2163,172 @@ module.exports = {
 			}
 			
 			return result / n.length;
+		},
+		
+		// calculates the limit of "equ" as x approaches "bound," optionally from a "direction," where a positive number means to come from larger numbers, and vice versa for a negative number
+		limit: function(exp, bound, direction = 0) {
+			// separate piecewise functions
+			var p = [];
+			
+			if (exp.length === 1) { // should only be one function
+				p = parse(exp[0]);
+			} else {
+				if (exp.length % 2 !== 0) { // should be even so that a condition is associated with a function
+					throw new ComputationError('Not all functions passed were associated with a condition. Each function must have a condition associated with it, for example, in `0<=x<=pi : sin(x) : pi<x<=10 : x/pi-1`, `sin(x)` is associated with `0<=x<=pi`.');
+				}
+				
+				// parse inequalities and functions
+				for (var i = 0; i < exp.length; i += 2) {
+					p.push({
+						condition: inequality(exp[i]),
+						expTree: parse(exp[i + 1]),
+					});
+				}
+				
+				// check if any inequality overlaps with another
+				var j = 0;
+				for (var i = 0; i < p.length; ++i) {
+					for (j = 1; j < p.length; ++j) {
+						if (i === j) {
+							continue;
+						}
+						
+						if (overlap(p[i].condition, p[j].condition)) {
+							throw new ComputationError('There were two inequalities that overlapped with each other. Check again to make sure two different inequalities do not overlap.');
+						}
+					}
+					
+					j = i;
+				}
+			}
+			
+			if (bound === Infinity || bound === -Infinity) {
+				direction = f.polarity(bound);
+			} else {
+				direction = f.polarity(direction);
+			}
+			
+			// coming from both directions
+			if (direction === 0) {
+				var results = {
+					left: [],
+					right: [],
+					dist: [],
+				};
+				
+				// evaluate from left and right towards bound
+				for (var i = 0; i < 10; ++i) {
+					var lX = bound - 1 / f.pow(10 - i / 2, i);
+					var rX = bound + 1 / f.pow(10 - i / 2, i);
+					var l;
+					var r;
+					
+					if (Array.isArray(p) && p[0].condition && p[0].expTree) {
+						var conditions = {
+							fromLeft: between(lX, p),
+							fromRight: between(rX, p),
+						};
+						
+						// if any of the conditions return undefined, the function is undefined at that point
+						if (!conditions.fromLeft || !conditions.fromRight) {
+							continue;
+						}
+						
+						l = evaluate(conditions.fromLeft.expTree, {x: lX});
+						r = evaluate(conditions.fromRight.expTree, {x: rX});
+					} else {
+						l = evaluate(p, {x: lX});
+						r = evaluate(p, {x: rX});
+					}
+					
+					if (!isFinite(l) || !isFinite(r)) {
+						continue;
+					}
+					
+					results.left.push(l);
+					results.right.push(r);
+					
+					results.dist.push(f.abs(l - r));
+				}
+				
+				// if the results list is too small (reached "continue;" too many times), conclude that the piecewise function isn't defined in the specified region
+				if (results.dist.length < 5) {
+					throw new ComputationError('This piecewise function is not defined in the region surrounding the boundary. Check again to make sure you inputted the correct bound that `x` approaches, or expand the region.');
+				}
+				
+				// if the differences between the two continuously gets smaller and smaller (or the difference at the last point is 0), return the average of the final result values
+				// otherwise, the limit doesn't exist
+				if ((results.dist[results.dist.length - 1] === 0 || zeroDiff(results.dist) || lessThreshold(results.dist, 1e-5)) && results.dist[results.dist.length - 1] < 1e-5) {
+					return mJS.fraction((results.left[results.left.length - 1] + results.right[results.right.length - 1]) / 2).valueOf();
+				} else {
+					return undefined;
+				}
+			} else {
+				var results = {
+					to: [],
+					dist: [],
+				};
+				
+				// evaluate from the specified direction towards bound
+				for (var i = 0; i < 10; ++i) {
+					var r;
+					
+					if (isFinite(bound)) {
+						var x = bound + f.polarity(direction) / f.pow(10, i);
+						
+						if (Array.isArray(p) && p[0].condition && p[0].expTree) {
+							var conditions = {
+								from: between(x, p),
+							};
+							
+							// if any of the conditions return undefined, the function is undefined at that point
+							if (!conditions.from) {
+								continue;
+							}
+							
+							r = evaluate(conditions.from.expTree, {x: x});
+						} else {
+							r = evaluate(p, {x: x});
+						}
+					} else {
+						if (Array.isArray(p) && p[0].condition && p[0].expTree) {
+							throw new ComputationError(bound + ' cannot be used as a bound when working with piecewise functions.');
+						}
+						
+						r = evaluate(p, {x: f.polarity(bound) * f.pow(10, i + 15)});
+					}
+					
+					results.to.push(r);
+					
+					if (results.to[i - 1] !== undefined) {
+						results.dist.push(f.abs(r - results.to[i - 1]));
+					}
+				}
+				
+				// if the results list is too small (reached "continue;" too many times), conclude that the piecewise function isn't defined in the specified region
+				if (results.dist.length < 5) {
+					throw new ComputationError('This piecewise function is not defined in the region surrounding the boundary. Check again to make sure you inputted the correct bound that `x` approaches, or expand the region.');
+				}
+				
+				// if the differences between the to values continuously gets smaller and smaller (or the difference at the last point is 0), return the average of the final result values
+				// otherwise, if the differences get larger, the answer will be either Infinity or -Infinity depending on the value the to values approach
+				if (results.dist[results.dist.length - 1] === 0 || zeroDiff(results.dist)) {
+					var r = (results.to[results.to.length - 1] + results.to[results.to.length - 2]) / 2;
+					
+					if (isFinite(r)) {
+						return mJS.fraction(r).valueOf();
+					} else {
+						return r;
+					}
+				} else {
+					// if the to values keep getting larger, the function approaches Infinity, otherwise -Infinity
+					if (largerDiff(results.to)) {
+						return Infinity;
+					} else {
+						return -Infinity;
+					}
+				}
+			}
 		},
 		
 		// solve for roots using newton-raphson method

@@ -7,7 +7,7 @@ mJS.config({
 });*/
 var mJS = require('mathjs');
 
-var {Parser, Tokenizer} = require('./compiler.js');
+var {TokenizationError, ComputationError, Parser, Tokenizer} = require('./compiler.js');
 
 // creates a deep copy of an object
 var deepCopy = function(obj) {
@@ -293,20 +293,6 @@ var listFormat = function(arr, prefixElem = '', suffixElem = '', finalConnector 
 	return str.trim();
 };
 
-class TokenizationError extends Error {
-	constructor(message) {
-		super(message);
-		this.name = 'TokenizationError';
-	}
-}
-
-class ComputationError extends Error {
-	constructor(message) {
-		super(message);
-		this.name = 'ComputationError';
-	}
-}
-
 var parseNumber = function(tokens, current, parser) {
 	var tokensParsed = [tokens[current]];
 	
@@ -379,6 +365,11 @@ var parseNested = function(tokens, current, parser) {
 		
 		// parse the tokens from the current index to the closing index
 		var relevantTokens = tokens.slice(current + 1, closingIndex);
+		
+		if (relevantTokens.length === 0) {
+			throw new TokenizationError('Nested bodies `()` cannot be empty.');
+		}
+		
 		return {
 			body: parser.parse(relevantTokens),
 			offset: 0,
@@ -535,7 +526,14 @@ var parseSuper = function(tokens, current, parser) {
 
 var parseSymbol = function(tokens, current, parser) {
 	if (tokens[current].type === 'symbol') {
-		if (tokens[current].value === '×' || tokens[current].value === '·') {
+		if (tokens[current].value === '∞') {
+			return {
+				offset: 0,
+				tokensParsed: 1,
+				type: 'NumberLiteral',
+				value: Infinity,
+			};
+		} else if (tokens[current].value === '×' || tokens[current].value === '·') {
 			return {
 				offset: 0,
 				tokensParsed: 1,
@@ -843,6 +841,7 @@ var baseEvaluate = function(ast, calcVars, trigMode, current) {
 		var current = ast[index];
 		var leftToken = ast[index - 1];
 		var rightToken = ast[index + 1];
+		var replaceCount = 3;
 		
 		if (leftToken === undefined || rightToken === undefined) {
 			throw new ComputationError('The `' + current.value + '` operator requires a number / variable / symbol on both sides of the operator.');
@@ -860,6 +859,8 @@ var baseEvaluate = function(ast, calcVars, trigMode, current) {
 		}
 		
 		if (rightToken.type === 'Operator' && rightToken.value === '-') { // distribute the negative in
+			++replaceCount;
+			
 			if (ast[index + 2].type === 'ComplexLiteral') {
 				rightValue = {
 					type: ast[index + 2].type,
@@ -912,10 +913,10 @@ var baseEvaluate = function(ast, calcVars, trigMode, current) {
 					};
 				}
 				
-				ast.splice(index - 1, 3, ans);
+				ast.splice(index - 1, replaceCount, ans);
 			} else {
 				ans = leftValue * rightValue;
-				ast.splice(index - 1, 3, {
+				ast.splice(index - 1, replaceCount, {
 					type: 'NumberLiteral',
 					value: ans,
 				});
@@ -955,10 +956,10 @@ var baseEvaluate = function(ast, calcVars, trigMode, current) {
 					};
 				}
 				
-				ast.splice(index - 1, 3, ans);
+				ast.splice(index - 1, replaceCount, ans);
 			} else {
 				ans = leftValue / rightValue;
-				ast.splice(index - 1, 3, {
+				ast.splice(index - 1, replaceCount, {
 					type: 'NumberLiteral',
 					value: ans,
 				});
@@ -970,7 +971,7 @@ var baseEvaluate = function(ast, calcVars, trigMode, current) {
 			}
 			
 			ans = leftValue % rightValue;
-			ast.splice(index - 1, 3, {
+			ast.splice(index - 1, replaceCount, {
 				type: 'NumberLiteral',
 				value: ans,
 			});
@@ -1139,6 +1140,7 @@ var e = function(exp, calcVars, trigMode) {
 	m = trigMode;
 	
 	calcVars = Object.assign({
+		infinity: Infinity,
 		tau: 6.283185307179586,
 		pi: 3.141592653589793,
 		e: 2.718281828459045,
@@ -1165,12 +1167,11 @@ var e = function(exp, calcVars, trigMode) {
 	// should be size 1
 	if (result.ast.length > 1) {
 		throw new SyntaxError('There were too many nodes in the resulting tree.');
-		//throw new ComputationError('Resulting tree should\'ve been one node, but it was ' + ast.length + ' nodes long.');
 	}
 	
 	if (result.ast[0].type === 'NumberLiteral') {
-		if (!isFinite(result.ast[0].value)) {
-			throw new ComputationError('The answer does not exist, or was too large to display.');
+		if (isNaN(result.ast[0].value)) {
+			//throw new ComputationError('The answer does not exist, or was too large to display.');
 		}
 		
 		result.value = result.ast[0].value;

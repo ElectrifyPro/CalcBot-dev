@@ -1,3 +1,17 @@
+class TokenizationError extends Error {
+	constructor(message) {
+		super(message);
+		this.name = 'TokenizationError';
+	}
+}
+
+class ComputationError extends Error {
+	constructor(message) {
+		super(message);
+		this.name = 'ComputationError';
+	}
+}
+
 class Parser {
 	constructor(tokenizer, grammar, finishedCallback) {
 		this.tokenizer = tokenizer;
@@ -130,6 +144,9 @@ class Tokenizer {
 }
 
 module.exports = {
+	TokenizationError: TokenizationError,
+	ComputationError: ComputationError,
+	
 	Parser: Parser,
 	Tokenizer: Tokenizer,
 };
